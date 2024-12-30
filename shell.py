@@ -1,6 +1,5 @@
-import cmd, sys
+import cmd
 from pymodbus.client import ModbusTcpClient
-from mbShell import *
 
 class modbusShell(cmd.Cmd):
     intro = "Welcome to the pyModbusShell, written by xpwnedu. \nType help or ? to list commands.\n"
