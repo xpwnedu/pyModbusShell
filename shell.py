@@ -1,4 +1,5 @@
 import cmd
+import signal
 from pymodbus.client import ModbusTcpClient
 
 class modbusShell(cmd.Cmd):
@@ -6,7 +7,44 @@ class modbusShell(cmd.Cmd):
     prompt = "(pyMbShell) > "
     client = None
 
-    # ----- basic MbShell commands -----
+    def __init__(self):
+        super().__init__()
+        # Handle Ctrl+C gracefully
+        signal.signal(signal.SIGINT, self.signal_handler)
+        self.interrupted = False
+
+    def signal_handler(self, sig, frame):
+        self.interrupted = True
+        print("\nCtrl+C caught. Please type 'exit' to exit the shell.")
+    
+    def ensure_connection(self):
+        "Ensure the client is connected."
+        if not self.client:
+            print("Not connected to a server.")
+            return False
+        return True
+
+    def handle_interruptible_loop(self, start, count, action):
+        "Handles an interruptible loop for reading Modbus data."
+        try:
+            for i in range(count):
+                if self.interrupted:
+                    self.interrupted = False
+                    break
+                action(i + start)
+        except KeyboardInterrupt:
+            self.interrupted = False
+            print("\nOperation aborted by user.")
+        except Exception as e:
+            print(f"Error: {e}")
+    
+    # ----- Basic MbShell Commands -----
+    def do_exit(self, arg):
+        "Exit the shell: exit"
+        print("Bye bye!")
+        return True
+    
+    # ----- Modbus Connection Commands -----
     def do_connect(self, arg):
         "Connect to a Modbus server: connect <host> <port>"
         try:
@@ -22,66 +60,99 @@ class modbusShell(cmd.Cmd):
     def do_disconnect(self, arg):
         "Disconnect from a Modbus server: disconnect"
         if not self.client:
-            print('Not connected to a server.')
+            print("Not connected to a server.")
             return
         self.client.close()
-        print("Succesfully disconnected.")
+        print("Successfully disconnected.")
+    
+    def do_get_device_information(self, arg):
+        "Query device information: get_device_information"
+
+    
+    # ----- Coil Commands -----
 
     def do_read_coil(self, arg):
         'Read a coil: read_coil <coil>'
-        if not self.client:
-            print('Not connected to a server.')
+        if not self.ensure_connection():
             return
-        coil = int(arg)
-        read = self.client.read_coils(coil, 1)
-        print(read.bits[0])
-    
+        try:
+            coil = int(arg)
+            read = self.client.read_coils(coil, 1)
+            print(read.bits[0])
+        except Exception as e:
+            print(f"Error: {e}")
+
     def do_read_coils(self, arg):
-        'Read coils: read_coils <starting_coil> <count>'
-        if not self.client:
-            print('Not connected to a server.')
+        "Read coils: read_coils <starting_coil> <count>"
+        if not self.ensure_connection():
             return
-        starting_coil, count = arg.split()
-        read = self.client.read_coils(int(starting_coil), int(count))
-        for i in range(int(count)):
-            print(f"Coil {i}: {read.bits[i]}")
+        try:
+            starting_coil, count = map(int, arg.split())
+            read = self.client.read_coils(starting_coil, count)
+            self.handle_interruptible_loop(
+                starting_coil, count, lambda i: print(f"Coil {i}: {read.bits[i - starting_coil]}")
+            )
+        except Exception as e:
+            print(f"Error: {e}")
 
     def do_write_coil(self, arg):
         'Write to a coil: write_coil <coil> <Boolean>'
-        if not self.client:
-            print('Not connected to a server.')
+        if not self.ensure_connection():
             return
-        coil, value = arg.split()
-        value = value.lower()
-        if value == "true":
-            value = True
-        elif value == "false":
-            value = False
-        else:
-            print("Not a valid Boolean.")
+        try:
+            coil, value = arg.split()
+            value = value.lower()
+            if value == "true":
+                value = True
+            elif value == "false":
+                value = False
+            else:
+                print("Not a valid Boolean.")
+                return
+            self.client.write_coil(int(coil), value)
+            read = self.client.read_coils(int(coil), 1)
+            print(read.bits[0])
+        except Exception as e:
+            print(f"Error: {e}")
+
+    # ----- Register Commands -----
+    def do_read_holding_registers(self, arg):
+        "Read holding registers: read_holding_registers <starting_register> <count>"
+        if not self.ensure_connection():
             return
-        self.client.write_coil(int(coil), value)
-        read = self.client.read_coils(int(coil))
-        print(read.bits[0])
+        try:
+            starting_register, count = map(int, arg.split())
+            self.handle_interruptible_loop(
+                starting_register, count, 
+                lambda i: print(f"Holding register {i}: {self.client.read_holding_registers(i).registers[0]}")
+            )
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def do_read_input_registers(self, arg):
+        "Read input registers: read_input_registers <starting_register> <count>"
+        if not self.ensure_connection():
+            return
+        try:
+            starting_register, count = map(int, arg.split())
+            self.handle_interruptible_loop(
+                starting_register, count, 
+                lambda i: print(f"Input register {i}: {self.client.read_input_registers(i).registers[0]}")
+            )
+        except Exception as e:
+            print(f"Error: {e}")
     
-    def do_read_register(self, arg):
-        'Read a register: read_holding_register <register>'
-        if not self.client:
-            print('Not connected to a server.')
+    def do_write_holding_register(self, arg):
+        'Write an input register: write_input_regiser <register> <value>'
+        if not self.ensure_connection():
             return
-        register = int(arg)
-        read = self.client.read_holding_registers(register)
-        print(read.registers[0])
-    
-    def do_read_registers(self, arg):
-        'Read a register: read_holding_register <register> <count>'
-        if not self.client:
-            print('Not connected to a server.')
-            return
-        register, count = arg.split()
-        for i in range(int(count)):
-            read = self.client.read_holding_registers(int(register) + 1)
-            print(read.registers[0])
+        try:
+            register, value = arg.split()
+            self.client.write_register(int(register), int(value))
+            read = self.client.read_holding_registers(int(register))
+            print(f"Register {register}: {read.registers[0]}")
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == '__main__':
     modbusShell().cmdloop()
