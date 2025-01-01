@@ -116,6 +116,26 @@ class modbusShell(cmd.Cmd):
             print(f"Error: {e}")
 
     # ----- Register Commands -----
+    def do_read_registers_from_file(self, arg):
+        "Read holding registers from a file: read_registers_from_file <filename>"
+        if not self.ensure_connection():
+            return
+        try:
+            with open(arg, "r") as file:
+                for line in file:
+                    # Parse lines in the format "<register>"
+                    try:
+                        register = int(line.strip())
+                        read = self.client.read_holding_registers(int(register))
+                        print(f"Holding register {register}: {read.registers[0]}")
+                        read = self.client.read_holding_registers(int(register))
+                    except ValueError:
+                        print(f"Skipping invalid line: {line.strip()}")
+        except FileNotFoundError:
+            print(f"File not found: {arg}")
+        except Exception as e:
+            print(f"Error: {e}")
+
     def do_read_holding_registers(self, arg):
         "Read holding registers: read_holding_registers <starting_register> <count>"
         if not self.ensure_connection():
@@ -139,6 +159,26 @@ class modbusShell(cmd.Cmd):
                 starting_register, count, 
                 lambda i: print(f"Input register {i}: {self.client.read_input_registers(i).registers[0]}")
             )
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def do_write_registers_from_file(self, arg):
+        "Write holding registers from a file: write_registers_from_file <filename>"
+        if not self.ensure_connection():
+            return
+        try:
+            with open(arg, "r") as file:
+                for line in file:
+                    # Parse lines in the format "<register>: <value>"
+                    try:
+                        register, value = map(int, line.split(":"))
+                        self.client.write_register(register, value)
+                        print(f"Wrote {value} to holding register {register}")
+                        read = self.client.read_holding_registers(register)
+                    except ValueError:
+                        print(f"Skipping invalid line: {line.strip()}")
+        except FileNotFoundError:
+            print(f"File not found: {arg}")
         except Exception as e:
             print(f"Error: {e}")
     
